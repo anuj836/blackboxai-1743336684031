@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:stock_app/models/stock_model.dart';
 import 'package:stock_app/services/ai_service.dart';
-import 'package:stock_app/widgets/custom_card.dart';
 import 'package:stock_app/widgets/loading_spinner.dart';
+import 'package:stock_app/widgets/error_alert.dart';
 
 class StockSuggestorScreen extends StatefulWidget {
   const StockSuggestorScreen({super.key});
@@ -12,118 +11,107 @@ class StockSuggestorScreen extends StatefulWidget {
 }
 
 class _StockSuggestorScreenState extends State<StockSuggestorScreen> {
-  final AIService _aiService = AIService();
-  late Future<List<Stock>> _suggestedStocks;
-  String _currentStrategy = 'Conservative';
+  final TextEditingController _searchController = TextEditingController();
+  bool _isLoading = false;
+  String _predictionResult = '';
+  String _selectedStock = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _suggestedStocks = _aiService.getSuggestedStocks(_currentStrategy);
+  Future<void> _getStockPrediction() async {
+    if (_searchController.text.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+      _selectedStock = _searchController.text.toUpperCase();
+      _predictionResult = '';
+    });
+
+    try {
+      final prediction = await AiService.predictStockTrend(_selectedStock);
+      setState(() {
+        _predictionResult = prediction;
+      });
+    } catch (e) {
+      ErrorAlert.show(
+        context: context,
+        title: 'Prediction Error',
+        message: 'Failed to get prediction: ${e.toString()}',
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
-  void _refreshSuggestions(String strategy) {
-    setState(() {
-      _currentStrategy = strategy;
-      _suggestedStocks = _aiService.getSuggestedStocks(strategy);
-    });
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Stock Suggestor'),
+        title: const Text('Stock Suggestor'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _refreshSuggestions(_currentStrategy),
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {
+              showAboutDialog(
+                context: context,
+                applicationName: 'Stock Suggestor',
+                applicationVersion: '1.0.0',
+                children: [
+                  const Text('Get AI-powered stock recommendations'),
+                ],
+              );
+            },
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<String>(
-              value: _currentStrategy,
-              items: const [
-                DropdownMenuItem(
-                  value: 'Conservative',
-                  child: Text('Conservative'),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Enter stock symbol (e.g. AAPL)',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: _getStockPrediction,
                 ),
-                DropdownMenuItem(
-                  value: 'Balanced',
-                  child: Text('Balanced'),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8.0),
                 ),
-                DropdownMenuItem(
-                  value: 'Aggressive',
-                  child: Text('Aggressive'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  _refreshSuggestions(value);
-                }
-              },
-              decoration: const InputDecoration(
-                labelText: 'Investment Strategy',
-                border: OutlineInputBorder(),
               ),
+              onSubmitted: (_) => _getStockPrediction(),
             ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<Stock>>(
-              future: _suggestedStocks,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingSpinner();
-                } else if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Error: ${snapshot.error}'),
-                  );
-                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(
-                    child: Text('No suggestions available'),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: snapshot.data!.length,
-                  itemBuilder: (context, index) {
-                    final stock = snapshot.data![index];
-                    return CustomCard(
-                      title: stock.symbol,
-                      subtitle: stock.name,
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '\$${stock.price.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${stock.changePercent.toStringAsFixed(2)}%',
-                            style: TextStyle(
-                              color: stock.changePercent >= 0
-                                  ? Colors.green
-                                  : Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        // TODO: Show detailed analysis
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            if (_isLoading) const LoadingSpinner(),
+            if (_predictionResult.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Analysis for $_selectedStock',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    _predictionResult,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
