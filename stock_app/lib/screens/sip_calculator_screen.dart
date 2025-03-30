@@ -11,40 +11,44 @@ class SIPCalculatorScreen extends StatefulWidget {
 
 class _SIPCalculatorScreenState extends State<SIPCalculatorScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountController = TextEditingController();
-  final _durationController = TextEditingController();
-  final _rateController = TextEditingController();
+  final _monthlyController = TextEditingController();
+  final _yearsController = TextEditingController();
+  final _returnController = TextEditingController();
+  double _result = 0;
+  bool _isCalculating = false;
 
-  double _futureValue = 0;
-  double _totalInvestment = 0;
-  double _totalReturns = 0;
-  bool _isCalculated = false;
+  Future<void> _calculateSIP() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isCalculating = true);
+
+    try {
+      final monthly = double.parse(_monthlyController.text);
+      final years = int.parse(_yearsController.text);
+      final annualReturn = double.parse(_returnController.text);
+
+      await Future.delayed(const Duration(milliseconds: 500)); // Simulate calculation
+
+      setState(() {
+        _result = CalculationUtils.calculateSip(monthly, annualReturn, years);
+      });
+    } catch (e) {
+      ErrorAlert.show(
+        context: context,
+        title: 'Calculation Error',
+        message: 'Invalid input values',
+      );
+    } finally {
+      setState(() => _isCalculating = false);
+    }
+  }
 
   @override
   void dispose() {
-    _amountController.dispose();
-    _durationController.dispose();
-    _rateController.dispose();
+    _monthlyController.dispose();
+    _yearsController.dispose();
+    _returnController.dispose();
     super.dispose();
-  }
-
-  void _calculateSIP() {
-    if (_formKey.currentState!.validate()) {
-      final amount = double.parse(_amountController.text);
-      final duration = int.parse(_durationController.text);
-      final rate = double.parse(_rateController.text);
-
-      setState(() {
-        _futureValue = calculateSIPFutureValue(
-          monthlyInvestment: amount,
-          durationInYears: duration,
-          annualReturnRate: rate,
-        );
-        _totalInvestment = amount * duration * 12;
-        _totalReturns = _futureValue - _totalInvestment;
-        _isCalculated = true;
-      });
-    }
   }
 
   @override
@@ -53,117 +57,103 @@ class _SIPCalculatorScreenState extends State<SIPCalculatorScreen> {
       appBar: AppBar(
         title: const Text('SIP Calculator'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _amountController,
-                decoration: const InputDecoration(
-                  labelText: 'Monthly Investment (\$)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter investment amount';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _durationController,
-                decoration: const InputDecoration(
-                  labelText: 'Duration (Years)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter duration';
-                  }
-                  if (int.tryParse(value) == null) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _rateController,
-                decoration: const InputDecoration(
-                  labelText: 'Expected Annual Return Rate (%)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter expected return rate';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Please enter a valid number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _calculateSIP,
-                child: const Text('Calculate'),
-              ),
-              if (_isCalculated) ...[
-                const SizedBox(height: 32),
-                const Divider(),
-                const SizedBox(height: 16),
-                const Text(
-                  'Results',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _monthlyController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Monthly Investment (\$)',
+                    border: OutlineInputBorder(),
                   ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter amount';
+                    }
+                    if (double.tryParse(value) == null) {
+                      return 'Enter valid number';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
-                _buildResultCard('Future Value', '\$${_futureValue.toStringAsFixed(2)}'),
-                _buildResultCard('Total Investment', '\$${_totalInvestment.toStringAsFixed(2)}'),
-                _buildResultCard(
-                  'Estimated Returns',
-                  '\$${_totalReturns.toStringAsFixed(2)}',
-                  color: _totalReturns >= 0 ? Colors.green : Colors.red,
+                TextFormField(
+                  controller: _yearsController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Investment Period (Years)',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter years';
+                    }
+                    if (int.tryParse(value) == null) {
+                      return 'Enter whole number';
+                    }
+                    return null;
+                  },
                 ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _returnController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Expected Annual Return (%)',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter return rate';
+                    }
+                    if (double.tryParse(value) == null) {
+                      return 'Enter valid percentage';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _isCalculating ? null : _calculateSIP,
+                  child: _isCalculating
+                      ? const CircularProgressIndicator()
+                      : const Text('Calculate'),
+                ),
+                const SizedBox(height: 24),
+                if (_result > 0) ...[
+                  const Text(
+                    'Estimated Returns',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        '\$${_result.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Based on ${_yearsController.text} years at '
+                    '${_returnController.text}% annual return',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultCard(String title, String value, {Color? color}) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 16),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
         ),
       ),
     );
