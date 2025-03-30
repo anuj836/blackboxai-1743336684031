@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:charts_flutter/flutter.dart' as charts;
-import 'package:stock_app/services/ai_service.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:stock_app/services/stock_api_service.dart';
 import 'package:stock_app/widgets/loading_spinner.dart';
+import 'package:stock_app/widgets/error_alert.dart';
 
 class MarketPredictorScreen extends StatefulWidget {
   const MarketPredictorScreen({super.key});
@@ -11,213 +12,126 @@ class MarketPredictorScreen extends StatefulWidget {
 }
 
 class _MarketPredictorScreenState extends State<MarketPredictorScreen> {
-  final AIService _aiService = AIService();
-  late Future<MarketPrediction> _predictionFuture;
-  String _currentIndex = 'S&P 500';
+  final StockApiService _apiService = StockApiService();
+  bool _isLoading = false;
+  List<MarketData> _marketData = [];
+  String _selectedTimeframe = '1M';
+  String _selectedIndex = 'S&P 500';
 
   @override
   void initState() {
     super.initState();
-    _predictionFuture = _aiService.getMarketPrediction(_currentIndex);
+    _fetchMarketData();
   }
 
-  void _refreshPrediction(String index) {
-    setState(() {
-      _currentIndex = index;
-      _predictionFuture = _aiService.getMarketPrediction(index);
-    });
+  Future<void> _fetchMarketData() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await _apiService.getMarketData();
+      setState(() {
+        _marketData = data.map((e) => MarketData.fromJson(e)).toList();
+      });
+    } catch (e) {
+      ErrorAlert.show(
+        context: context,
+        title: 'Data Error',
+        message: 'Failed to load market data: ${e.toString()}',
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Market Predictor'),
+        title: const Text('Market Analysis'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => _refreshPrediction(_currentIndex),
+            onPressed: _fetchMarketData,
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<String>(
-              value: _currentIndex,
-              items: const [
-                DropdownMenuItem(
-                  value: 'S&P 500',
-                  child: Text('S&P 500'),
-                ),
-                DropdownMenuItem(
-                  value: 'NASDAQ',
-                  child: Text('NASDAQ'),
-                ),
-                DropdownMenuItem(
-                  value: 'DOW',
-                  child: Text('DOW'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  _refreshPrediction(value);
-                }
-              },
-              decoration: const InputDecoration(
-                labelText: 'Market Index',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          Expanded(
-            child: FutureBuilder<MarketPrediction>(
-              future: _predictionFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingSpinner();
-                } else if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Error: ${snapshot.error}'),
-                  );
-                } else if (!snapshot.hasData) {
-                  return const Center(
-                    child: Text('No prediction available'),
-                  );
-                }
-
-                final prediction = snapshot.data!;
-                return SingleChildScrollView(
-                  child: Column(
+      body: _isLoading
+          ? const LoadingSpinner()
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
                     children: [
-                      SizedBox(
-                        height: 300,
-                        child: charts.TimeSeriesChart(
-                          [
-                            charts.Series<TimeSeriesValue, DateTime>(
-                              id: 'Historical',
-                              colorFn: (_, __) => charts.MaterialPalette.blue.shadeDefault,
-                              domainFn: (value, _) => value.time,
-                              measureFn: (value, _) => value.value,
-                              data: prediction.historicalData,
-                            ),
-                            charts.Series<TimeSeriesValue, DateTime>(
-                              id: 'Predicted',
-                              colorFn: (_, __) => charts.MaterialPalette.green.shadeDefault,
-                              domainFn: (value, _) => value.time,
-                              measureFn: (value, _) => value.value,
-                              data: prediction.predictedData,
-                            ),
-                          ],
-                          animate: true,
-                          domainAxis: const charts.DateTimeAxisSpec(),
-                          primaryMeasureAxis: const charts.NumericAxisSpec(
-                            tickProviderSpec:
-                                charts.BasicNumericTickProviderSpec(
-                              desiredMinTickCount: 6,
-                            ),
-                          ),
-                        ),
+                      DropdownButton<String>(
+                        value: _selectedIndex,
+                        items: ['S&P 500', 'NASDAQ', 'DOW', 'RUSSELL 2000']
+                            .map((value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(value),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() => _selectedIndex = value!);
+                          _fetchMarketData();
+                        },
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Market Outlook',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  prediction.summary,
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    const Text(
-                                      'Confidence: ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${prediction.confidence}%',
-                                      style: TextStyle(
-                                        color: prediction.confidence >= 70
-                                            ? Colors.green
-                                            : prediction.confidence >= 50
-                                                ? Colors.orange
-                                                : Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Text(
-                                      'Trend: ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Text(
-                                      prediction.trend,
-                                      style: TextStyle(
-                                        color: prediction.trend == 'Bullish'
-                                            ? Colors.green
-                                            : Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      const SizedBox(width: 16),
+                      DropdownButton<String>(
+                        value: _selectedTimeframe,
+                        items: ['1D', '1W', '1M', '3M', '1Y', '5Y']
+                            .map((value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(value),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() => _selectedTimeframe = value!);
+                          _fetchMarketData();
+                        },
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: SfCartesianChart(
+                      primaryXAxis: CategoryAxis(),
+                      primaryYAxis: NumericAxis(
+                        title: AxisTitle(text: 'Price (\$)'),
+                      ),
+                      title: ChartTitle(text: '$_selectedIndex Performance'),
+                      legend: Legend(isVisible: true),
+                      tooltipBehavior: TooltipBehavior(enable: true),
+                      series: <ChartSeries>[
+                        LineSeries<MarketData, String>(
+                          name: 'Closing Price',
+                          dataSource: _marketData,
+                          xValueMapper: (data, _) => data.date,
+                          yValueMapper: (data, _) => data.value,
+                          dataLabelSettings: const DataLabelSettings(isVisible: false),
+                          markerSettings: const MarkerSettings(isVisible: true),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }
 
-class TimeSeriesValue {
-  final DateTime time;
+class MarketData {
+  final String date;
   final double value;
 
-  TimeSeriesValue(this.time, this.value);
-}
+  MarketData({required this.date, required this.value});
 
-class MarketPrediction {
-  final List<TimeSeriesValue> historicalData;
-  final List<TimeSeriesValue> predictedData;
-  final String summary;
-  final int confidence;
-  final String trend;
-
-  MarketPrediction({
-    required this.historicalData,
-    required this.predictedData,
-    required this.summary,
-    required this.confidence,
-    required this.trend,
-  });
+  factory MarketData.fromJson(Map<String, dynamic> json) {
+    return MarketData(
+      date: json['date'],
+      value: json['value'].toDouble(),
+    );
+  }
 }
